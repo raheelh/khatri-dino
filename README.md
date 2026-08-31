@@ -1,16 +1,11 @@
-## Devvit Vibe Coding Template
+## Reddit Devvit Dinosaur Game - Khatri Dino
 
-> Experimental! Template may change!
-
-A starter to build web applications on Reddit's developer platform
-
-- [Devvit](https://developers.reddit.com/): A way to build and deploy immersive games on Reddit
-- [Vite](https://vite.dev/): For compiling the webView
-- [React](https://react.dev/): For UI
-- [Hono](https://hono.dev/): For backend logic
-- [TRPC](https://trpc.io/): Type safe RPCs from server to client
-- [Tailwind](https://tailwindcss.com/): For styles
-- [TypeScript](https://www.typescriptlang.org/): For type safety
+A famous dino jump game for Reddit Devvit platform with:
+- Dino drop in animation
+- Motion background
+- Collision animation
+- Lifelines
+- Difficultly Levels
 
 ## Getting Started
 
