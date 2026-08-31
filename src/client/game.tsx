@@ -389,6 +389,10 @@ export const App = () => {
   const showDino = game.dinoVisible && !game.gameOver;
   const showLevelBanner = game.phase === 'intro' || game.phase === 'level-intro';
   const currentLevel = Math.min(10, Math.max(1, game.level));
+  const elapsedSeconds = Math.floor(game.levelTimer / 1000);
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  const elapsedRemainder = elapsedSeconds % 60;
+  const formattedTime = `${String(elapsedMinutes).padStart(2, '0')}:${String(elapsedRemainder).padStart(2, '0')}`;
   const dinoRunCycle = Math.floor(game.score / 8) % 2;
   const dinoLegAngle = game.phase === 'running' ? (dinoRunCycle === 0 ? -14 : 14) : 0;
   const dinoHeadBob = game.started && !game.gameOver && game.phase === 'running' ? Math.sin(game.score / 9) * 1.5 : 0;
@@ -447,10 +451,14 @@ export const App = () => {
               </span>
             ))}
           </div>
-          <span>{Math.floor(game.score)}</span>
+          <span>Score: {Math.floor(game.score)}</span>
         </div>
 
         <div className="relative h-[250px] overflow-hidden bg-[linear-gradient(#dff6ff_0%,#dfeeff_35%,#fff3d6_70%,#f7d7a3_100%)]">
+          <div className="absolute right-4 top-4 z-20 rounded-full bg-white/75 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.24em] text-slate-700 shadow-[0_8px_20px_rgba(15,23,42,0.08)] backdrop-blur-sm">
+            {formattedTime}
+          </div>
+
           <div className="absolute inset-x-0 top-0 h-full">
             {clouds.map((cloud, index) => {
               const left = ((cloud.left - cloudScroll * (index * 0.18 + 0.45)) % 1040) - 120;
