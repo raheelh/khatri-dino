@@ -24,6 +24,3 @@ A famous dino jump game for Reddit Devvit platform with:
 - `npm run login`: Logs your CLI into Reddit
 - `npm run type-check`: Type checks, lints, and prettifies your app
 
-## MCP Integration
-
-If you'd like to use the Devvit MCP server, please visit: https://developers.reddit.com/docs/next/guides/ai

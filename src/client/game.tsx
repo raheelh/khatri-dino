@@ -23,9 +23,12 @@ type GameState = {
   spawnTimer: number;
   lives: number;
   hitCooldown: number;
-  phase: 'intro' | 'running' | 'exploding' | 'respawning';
+  phase: 'intro' | 'running' | 'exploding' | 'respawning' | 'level-intro';
   dinoVisible: boolean;
   explosionTimer: number;
+  level: number;
+  levelTimer: number;
+  levelIntroTimer: number;
 };
 
 const initialState: GameState = {
@@ -41,6 +44,9 @@ const initialState: GameState = {
   phase: 'intro',
   dinoVisible: true,
   explosionTimer: 0,
+  level: 1,
+  levelTimer: 0,
+  levelIntroTimer: 0,
 };
 
 const DINO_SIZE = 34;
@@ -51,6 +57,8 @@ const BASE_SPEED = 7;
 const MAX_SPEED = 13;
 const BASE_SPAWN_MS = 1400;
 const MIN_SPAWN_MS = 760;
+const LEVEL_DURATION_MS = 60_000;
+const LEVEL_INTRO_MS = 1_600;
 
 const clouds = [
   { left: -30, top: 30, scale: 1.1, opacity: 0.75 },
@@ -96,10 +104,13 @@ export const App = () => {
           dinoY: 150,
           velocity: 0,
           dinoVisible: true,
+          level: 1,
+          levelTimer: 0,
+          levelIntroTimer: 0,
         };
       }
 
-      if (prev.phase === 'exploding' || prev.phase === 'respawning') {
+      if (prev.phase === 'exploding' || prev.phase === 'respawning' || prev.phase === 'level-intro') {
         return prev;
       }
 
@@ -142,6 +153,24 @@ export const App = () => {
         const deltaScale = delta / 16.67;
         const cooldown = Math.max(0, prev.hitCooldown - delta);
 
+        if (prev.phase === 'level-intro') {
+          const nextLevelIntroTimer = Math.max(0, prev.levelIntroTimer - delta);
+          if (nextLevelIntroTimer <= 0) {
+            return {
+              ...prev,
+              phase: 'running',
+              levelIntroTimer: 0,
+              dinoY: 0,
+              velocity: 0,
+            };
+          }
+
+          return {
+            ...prev,
+            levelIntroTimer: nextLevelIntroTimer,
+          };
+        }
+
         if (prev.phase === 'intro') {
           const nextVelocity = prev.velocity - GRAVITY * deltaScale;
           const nextDinoY = Math.max(0, prev.dinoY + nextVelocity * deltaScale);
@@ -151,7 +180,8 @@ export const App = () => {
               ...prev,
               dinoY: 0,
               velocity: 0,
-              phase: 'running',
+              phase: 'level-intro',
+              levelIntroTimer: LEVEL_INTRO_MS,
               dinoVisible: true,
             };
           }
@@ -215,8 +245,8 @@ export const App = () => {
 
         const nextVelocity = prev.velocity - GRAVITY * deltaScale;
         const nextDinoY = Math.max(0, prev.dinoY + nextVelocity * deltaScale);
-
-        const obstacleSpeed = BASE_SPEED + Math.min(prev.score / 35, MAX_SPEED - BASE_SPEED);
+        const nextLevelTimer = prev.levelTimer + delta;
+        const obstacleSpeed = BASE_SPEED + (prev.level - 1) * 1.2 + Math.min(prev.score / 35, MAX_SPEED - BASE_SPEED);
         let nextObstacles = prev.obstacles
           .map((obstacle) => ({
             ...obstacle,
@@ -225,17 +255,21 @@ export const App = () => {
           .filter((obstacle) => obstacle.x + obstacle.width > -20);
 
         let spawnTimer = prev.spawnTimer + delta;
-        const nextSpawnDelay = Math.max(MIN_SPAWN_MS, BASE_SPAWN_MS - prev.score * 0.18);
+        const nextSpawnDelay = Math.max(
+          MIN_SPAWN_MS,
+          BASE_SPAWN_MS - prev.level * 90 - prev.score * 0.12
+        );
 
         if (spawnTimer >= nextSpawnDelay) {
           spawnTimer = 0;
+          const levelBias = prev.level / 10;
           const kindRoll = Math.random();
           const kind: ObstacleKind =
-            kindRoll < 0.2
+            kindRoll < 0.18 + levelBias * 0.18
               ? 'small-cactus'
-              : kindRoll < 0.5
+              : kindRoll < 0.46 + levelBias * 0.22
                 ? 'double-cactus'
-                : kindRoll < 0.8
+                : kindRoll < 0.78 + levelBias * 0.18
                   ? 'cactus'
                   : 'rock';
 
@@ -294,6 +328,38 @@ export const App = () => {
           };
         }
 
+        if (nextLevelTimer >= LEVEL_DURATION_MS) {
+          if (prev.level >= 10) {
+            return {
+              ...prev,
+              dinoY: nextDinoY,
+              velocity: nextDinoY === 0 ? 0 : nextVelocity,
+              obstacles: nextObstacles,
+              score: prev.score + delta * 0.02,
+              spawnTimer,
+              hitCooldown: cooldown,
+              explosionTimer: prev.explosionTimer,
+              levelTimer: 0,
+            };
+          }
+
+          return {
+            ...prev,
+            dinoY: 0,
+            velocity: 0,
+            obstacles: [],
+            score: prev.score + delta * 0.02,
+            spawnTimer: 0,
+            hitCooldown: cooldown,
+            explosionTimer: prev.explosionTimer,
+            level: prev.level + 1,
+            levelTimer: 0,
+            phase: 'level-intro',
+            levelIntroTimer: LEVEL_INTRO_MS,
+            dinoVisible: true,
+          };
+        }
+
         return {
           ...prev,
           dinoY: nextDinoY,
@@ -303,6 +369,7 @@ export const App = () => {
           spawnTimer,
           hitCooldown: cooldown,
           explosionTimer: prev.explosionTimer,
+          levelTimer: nextLevelTimer,
         };
       });
 
@@ -320,6 +387,8 @@ export const App = () => {
   const groundScroll = (game.score * 1.4) % 180;
   const lifeBlocks = Array.from({ length: 5 }, (_, index) => index < game.lives);
   const showDino = game.dinoVisible && !game.gameOver;
+  const showLevelBanner = game.phase === 'intro' || game.phase === 'level-intro';
+  const currentLevel = Math.min(10, Math.max(1, game.level));
   const dinoRunCycle = Math.floor(game.score / 8) % 2;
   const dinoLegAngle = game.phase === 'running' ? (dinoRunCycle === 0 ? -14 : 14) : 0;
   const dinoHeadBob = game.started && !game.gameOver && game.phase === 'running' ? Math.sin(game.score / 9) * 1.5 : 0;
@@ -555,6 +624,14 @@ export const App = () => {
             <div className="absolute inset-0 flex items-center justify-center bg-slate-900/10 backdrop-blur-[1px]">
               <div className="rounded-full bg-white/90 px-5 py-2 text-base font-semibold text-slate-900 shadow-md">
                 Tap to start
+              </div>
+            </div>
+          )}
+
+          {showLevelBanner && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-900/5 backdrop-blur-[0.5px]">
+              <div className="level-banner rounded-full border border-white/60 bg-gradient-to-r from-[#ecfeff] via-[#f0fdf4] to-[#fff7ed] px-7 py-3 text-3xl font-black tracking-[0.18em] text-slate-900 shadow-[0_12px_30px_rgba(15,23,42,0.18)]">
+                Level {currentLevel}
               </div>
             </div>
           )}
