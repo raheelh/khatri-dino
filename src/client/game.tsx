@@ -13,14 +13,30 @@ type Obstacle = {
   kind: ObstacleKind;
 };
 
+type LifePickup = {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type PickupEffect = {
+  x: number;
+  y: number;
+  timer: number;
+};
+
 type GameState = {
   started: boolean;
   gameOver: boolean;
   dinoY: number;
   velocity: number;
   obstacles: Obstacle[];
+  pickups: LifePickup[];
   score: number;
   spawnTimer: number;
+  lifePickupSpawnTimer: number;
   lives: number;
   hitCooldown: number;
   phase: 'intro' | 'running' | 'exploding' | 'respawning' | 'level-intro';
@@ -29,6 +45,7 @@ type GameState = {
   level: number;
   levelTimer: number;
   levelIntroTimer: number;
+  pickupEffect: PickupEffect | null;
 };
 
 const initialState: GameState = {
@@ -37,8 +54,10 @@ const initialState: GameState = {
   dinoY: 0,
   velocity: 0,
   obstacles: [],
+  pickups: [],
   score: 0,
   spawnTimer: 0,
+  lifePickupSpawnTimer: 0,
   lives: 5,
   hitCooldown: 0,
   phase: 'intro',
@@ -47,6 +66,7 @@ const initialState: GameState = {
   level: 1,
   levelTimer: 0,
   levelIntroTimer: 0,
+  pickupEffect: null,
 };
 
 const DINO_SIZE = 34;
@@ -79,6 +99,7 @@ const mountainPalette = [
 export const App = () => {
   const [game, setGame] = useState<GameState>(initialState);
   const nextObstacleId = useRef(1);
+  const nextPickupId = useRef(1);
   const lastFrame = useRef<number | null>(null);
 
   const jump = () => {
@@ -254,6 +275,13 @@ export const App = () => {
           }))
           .filter((obstacle) => obstacle.x + obstacle.width > -20);
 
+        let nextPickups = prev.pickups
+          .map((pickup) => ({
+            ...pickup,
+            x: pickup.x - obstacleSpeed * deltaScale,
+          }))
+          .filter((pickup) => pickup.x + pickup.width > -20);
+
         let spawnTimer = prev.spawnTimer + delta;
         const nextSpawnDelay = Math.max(
           MIN_SPAWN_MS,
@@ -294,6 +322,23 @@ export const App = () => {
           ];
         }
 
+        const pickupSpawnDelay = 14000 + Math.random() * 10000;
+        let nextLifePickupSpawnTimer = prev.lifePickupSpawnTimer + delta;
+
+        if (prev.lives < 5 && nextLifePickupSpawnTimer >= pickupSpawnDelay && nextPickups.length === 0) {
+          nextLifePickupSpawnTimer = 0;
+          const pickupY = 46 + Math.random() * 70;
+          nextPickups = [
+            {
+              id: nextPickupId.current++,
+              x: 440,
+              y: pickupY,
+              width: 18,
+              height: 18,
+            },
+          ];
+        }
+
         const collided = nextObstacles.filter((obstacle) => {
           const dinoRight = DINO_X + DINO_SIZE;
           const dinoLeft = DINO_X;
@@ -306,6 +351,43 @@ export const App = () => {
           return xOverlap && yOverlap;
         });
 
+        const pickupCollision = nextPickups.filter((pickup) => {
+          const dinoRight = DINO_X + DINO_SIZE;
+          const dinoLeft = DINO_X;
+          const pickupLeft = pickup.x;
+          const pickupRight = pickup.x + pickup.width;
+          const xOverlap = dinoRight > pickupLeft && dinoLeft < pickupRight;
+          const dinoBottom = nextDinoY;
+          const dinoTop = nextDinoY + DINO_SIZE;
+          const yOverlap = dinoTop > pickup.y && dinoBottom < pickup.y + pickup.height + 12;
+          return xOverlap && yOverlap;
+        });
+
+        if (pickupCollision.length > 0 && prev.lives < 5) {
+          const pickup = pickupCollision[0]!;
+          nextPickups = nextPickups.filter((item) => item.id !== pickup.id);
+
+          return {
+            ...prev,
+            dinoY: nextDinoY,
+            velocity: nextDinoY === 0 ? 0 : nextVelocity,
+            obstacles: nextObstacles,
+            pickups: nextPickups,
+            score: prev.score + delta * 0.02,
+            spawnTimer,
+            lifePickupSpawnTimer: 0,
+            lives: Math.min(5, prev.lives + 1),
+            hitCooldown: cooldown,
+            explosionTimer: prev.explosionTimer,
+            levelTimer: nextLevelTimer,
+            pickupEffect: {
+              x: pickup.x,
+              y: pickup.y,
+              timer: 600,
+            },
+          };
+        }
+
         if (collided.length > 0 && cooldown <= 0) {
           const nextLives = Math.max(0, prev.lives - 1);
           const nextGameOver = nextLives <= 0;
@@ -317,14 +399,20 @@ export const App = () => {
             dinoY: nextDinoY,
             velocity: 0,
             obstacles: nextObstacles,
+            pickups: nextPickups,
             score: prev.score + delta * 0.02,
             spawnTimer,
+            lifePickupSpawnTimer: nextLifePickupSpawnTimer,
             lives: nextLives,
             hitCooldown: 1000,
             phase: nextGameOver ? 'running' : 'exploding',
             dinoVisible: false,
             explosionTimer: nextGameOver ? 0 : 380,
             gameOver: nextGameOver,
+            pickupEffect:
+              prev.pickupEffect !== null
+                ? { ...prev.pickupEffect, timer: Math.max(0, prev.pickupEffect.timer - delta) }
+                : null,
           };
         }
 
@@ -335,11 +423,17 @@ export const App = () => {
               dinoY: nextDinoY,
               velocity: nextDinoY === 0 ? 0 : nextVelocity,
               obstacles: nextObstacles,
+              pickups: nextPickups,
               score: prev.score + delta * 0.02,
               spawnTimer,
+              lifePickupSpawnTimer: nextLifePickupSpawnTimer,
               hitCooldown: cooldown,
               explosionTimer: prev.explosionTimer,
               levelTimer: 0,
+              pickupEffect:
+                prev.pickupEffect !== null
+                  ? { ...prev.pickupEffect, timer: Math.max(0, prev.pickupEffect.timer - delta) }
+                  : null,
             };
           }
 
@@ -348,8 +442,10 @@ export const App = () => {
             dinoY: 0,
             velocity: 0,
             obstacles: [],
+            pickups: [],
             score: prev.score + delta * 0.02,
             spawnTimer: 0,
+            lifePickupSpawnTimer: 0,
             hitCooldown: cooldown,
             explosionTimer: prev.explosionTimer,
             level: prev.level + 1,
@@ -357,6 +453,7 @@ export const App = () => {
             phase: 'level-intro',
             levelIntroTimer: LEVEL_INTRO_MS,
             dinoVisible: true,
+            pickupEffect: null,
           };
         }
 
@@ -365,11 +462,17 @@ export const App = () => {
           dinoY: nextDinoY,
           velocity: nextDinoY === 0 ? 0 : nextVelocity,
           obstacles: nextObstacles,
+          pickups: nextPickups,
           score: prev.score + delta * 0.02,
           spawnTimer,
+          lifePickupSpawnTimer: nextLifePickupSpawnTimer,
           hitCooldown: cooldown,
           explosionTimer: prev.explosionTimer,
           levelTimer: nextLevelTimer,
+          pickupEffect:
+            prev.pickupEffect !== null
+              ? { ...prev.pickupEffect, timer: Math.max(0, prev.pickupEffect.timer - delta) }
+              : null,
         };
       });
 
@@ -571,6 +674,38 @@ export const App = () => {
               }}
               aria-label="Dino"
             />
+          )}
+
+          {game.pickups.map((pickup) => (
+            <div
+              key={pickup.id}
+              className="absolute z-10"
+              style={{
+                left: `${pickup.x}px`,
+                bottom: `${pickup.y}px`,
+                width: `${pickup.width}px`,
+                height: `${pickup.height}px`,
+                transform: `translateY(${Math.sin(game.score / 14 + pickup.id) * 3}px)`,
+              }}
+            >
+              <div className="flex h-full w-full items-center justify-center rounded-full bg-white/30 text-[18px] text-[#ef4444] shadow-[0_0_16px_rgba(239,68,68,0.28)]">
+                ❤
+              </div>
+            </div>
+          ))}
+
+          {game.pickupEffect && (
+            <div
+              className="absolute z-20 pointer-events-none"
+              style={{
+                left: `${game.pickupEffect.x + 6}px`,
+                bottom: `${game.pickupEffect.y + 4}px`,
+                opacity: Math.max(0, game.pickupEffect.timer / 600),
+                transform: `translateY(${(600 - game.pickupEffect.timer) * 0.08}px) scale(${1 + (600 - game.pickupEffect.timer) / 500})`,
+              }}
+            >
+              <div className="text-[18px] font-black text-[#ef4444] drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]">+1 ❤</div>
+            </div>
           )}
 
           {game.obstacles.map((obstacle) => {
